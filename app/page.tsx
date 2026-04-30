@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, useSyncExternalStore } from 'react'
 import { supabase } from '../lib/supabase'
 
 type Role = 'grandchild' | 'grandparent'
@@ -24,15 +24,29 @@ type NoticeTone = 'success' | 'error' | 'info'
 
 const STORAGE_FAMILY_ID_KEY = 'grandparent_family_id'
 const STORAGE_INVITE_CODE_KEY = 'grandparent_invite_code'
+const STORAGE_ROLE_KEY = 'app_role'
+const STORAGE_GRANDCHILD_INVITE_CODE_KEY = 'grandchild_invite_code'
+const STORAGE_GRANDCHILD_FAMILY_ID_KEY = 'grandchild_family_id'
 
 export default function HomePage() {
-  const [role, setRole] = useState<Role | null>(null)
+  const [role, setRole] = useState<Role | null>(() => {
+    if (typeof window === 'undefined') return null
+    const savedRole = window.localStorage.getItem(STORAGE_ROLE_KEY)
+    if (savedRole === 'grandchild' || savedRole === 'grandparent') return savedRole
+    return null
+  })
 
   // 손자/손녀 상태
   const [nickname, setNickname] = useState('')
-  const [inviteCode, setInviteCode] = useState('')
+  const [inviteCode, setInviteCode] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return window.localStorage.getItem(STORAGE_GRANDCHILD_INVITE_CODE_KEY) ?? ''
+  })
   const [mission, setMission] = useState('')
-  const [familyId, setFamilyId] = useState<string | null>(null)
+  const [familyId, setFamilyId] = useState<string | null>(() => {
+    if (typeof window === 'undefined') return null
+    return window.localStorage.getItem(STORAGE_GRANDCHILD_FAMILY_ID_KEY)
+  })
   const [isLoading, setIsLoading] = useState(false)
   const [isPostingMission, setIsPostingMission] = useState(false)
   const [responses, setResponses] = useState<ResponseItem[]>([])
@@ -59,12 +73,37 @@ export default function HomePage() {
   const mediaRecorder = useRef<MediaRecorder | null>(null)
   const mediaStream = useRef<MediaStream | null>(null)
   const audioChunks = useRef<Blob[]>([])
+  const isHydrated = useSyncExternalStore(
+    () => () => {},
+    () => true,
+    () => false
+  )
 
   const handleSelectRole = (nextRole: Role) => {
     setRole(nextRole)
   }
 
   const handleResetRole = () => {
+    window.localStorage.removeItem(STORAGE_ROLE_KEY)
+    window.localStorage.removeItem(STORAGE_GRANDCHILD_INVITE_CODE_KEY)
+    window.localStorage.removeItem(STORAGE_GRANDCHILD_FAMILY_ID_KEY)
+    window.localStorage.removeItem(STORAGE_FAMILY_ID_KEY)
+    window.localStorage.removeItem(STORAGE_INVITE_CODE_KEY)
+
+    setNickname('')
+    setInviteCode('')
+    setMission('')
+    setFamilyId(null)
+    setResponses([])
+    setGrandchildNotice(null)
+
+    setCode('')
+    setIsJoined(false)
+    setGrandparentFamilyId(null)
+    setCurrentMission(null)
+    setAudioUrl(null)
+    setIsRecording(false)
+    setGrandparentNotice(null)
     setRole(null)
   }
 
@@ -121,6 +160,7 @@ export default function HomePage() {
     else {
       showGrandchildNotice('success', '미션이 등록되었습니다.')
       setMission('')
+      await fetchResponses()
     }
     setIsPostingMission(false)
   }
@@ -149,6 +189,46 @@ export default function HomePage() {
 
     setResponses([])
   }, [familyId])
+
+  useEffect(() => {
+    if (role) {
+      window.localStorage.setItem(STORAGE_ROLE_KEY, role)
+      return
+    }
+    window.localStorage.removeItem(STORAGE_ROLE_KEY)
+  }, [role])
+
+  useEffect(() => {
+    if (inviteCode) {
+      window.localStorage.setItem(STORAGE_GRANDCHILD_INVITE_CODE_KEY, inviteCode)
+      return
+    }
+    window.localStorage.removeItem(STORAGE_GRANDCHILD_INVITE_CODE_KEY)
+  }, [inviteCode])
+
+  useEffect(() => {
+    if (familyId) {
+      window.localStorage.setItem(STORAGE_GRANDCHILD_FAMILY_ID_KEY, familyId)
+      return
+    }
+    window.localStorage.removeItem(STORAGE_GRANDCHILD_FAMILY_ID_KEY)
+  }, [familyId])
+
+  useEffect(() => {
+    if (code) {
+      window.localStorage.setItem(STORAGE_INVITE_CODE_KEY, code)
+      return
+    }
+    window.localStorage.removeItem(STORAGE_INVITE_CODE_KEY)
+  }, [code])
+
+  useEffect(() => {
+    if (grandparentFamilyId) {
+      window.localStorage.setItem(STORAGE_FAMILY_ID_KEY, grandparentFamilyId)
+      return
+    }
+    window.localStorage.removeItem(STORAGE_FAMILY_ID_KEY)
+  }, [grandparentFamilyId])
 
   useEffect(() => {
     if (role === 'grandchild' && familyId) {
@@ -285,6 +365,14 @@ export default function HomePage() {
   }
 
   if (role === null) {
+    if (!isHydrated) {
+      return (
+        <div className="min-h-screen bg-linear-to-b from-amber-50 to-orange-100 p-6 flex items-center justify-center">
+          <p className="text-amber-800 text-sm">불러오는 중...</p>
+        </div>
+      )
+    }
+
     return (
       <div className="min-h-screen bg-linear-to-b from-amber-50 to-orange-100 p-6 flex items-center justify-center">
         <div className="w-full max-w-3xl">
